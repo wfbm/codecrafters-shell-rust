@@ -17,8 +17,9 @@ fn main() {
         let command = input.trim();
         let parsed: Vec<&str> = command.split_whitespace().collect();
 
-        match parsed[..] {
+        match parsed.as_slice() {
             ["exit", code] => process::exit(code.parse::<i32>().unwrap()),
+            ["echo", args @ ..] => println!("{}", args.join(" ")),
             _ => println!("{command}: command not found"),
         }
     } 
