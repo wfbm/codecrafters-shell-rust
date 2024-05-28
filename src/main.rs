@@ -1,10 +1,11 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
-use std::process;
+use std::{process,env,fs};
+use std::path::PathBuf;
 
 fn main() {
 
-    loop {
+   loop {
 
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -57,7 +58,13 @@ impl Command for Builtin {
                     let parsed = cmd_str.split_whitespace().collect();
                     if let Some(cmd) = parse_command(parsed) {
                         match cmd {
-                            Builtin::Invalid { attempt } => println!("{attempt} not found"),
+                            Builtin::Invalid { attempt } => {
+                                if let Some(exe) = find_exe(&attempt) {
+                                    println!("{attempt} is {exe}");
+                                } else {
+                                    println!("{attempt} not found");
+                                }
+                            }
                             _ => println!("{} is a shell builtin", cmd.handle()),
                         }
                     } else {
@@ -89,5 +96,47 @@ fn parse_command(command: Vec<&str>) -> Option<Builtin> {
             attempt: command.join(" "),
         }),
     }
+}
+
+fn find_exe(name: &str) -> Option<String> {
+
+    if let Some(paths) = env::var_os("PATH") {
+
+        for path in env::split_paths(&paths) {
+            if let Some(file) = find_file_in_path(name, path) {
+                return Some(file);
+            }
+        }
+
+    } else {
+        println!("PATH not accessible");
+    }
+
+    return None;
+}
+
+fn find_file_in_path(file: &str, dir: PathBuf) -> Option<String> {
+
+    let mut dirs_to_search = vec![dir];
+    while let Some(current_dir) = dirs_to_search.pop() {
+
+        if current_dir.is_dir() {
+
+            for entry in fs::read_dir(current_dir).ok()? {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if !path.is_dir() {
+                    if let Some(file_found) = path.file_name()?.to_str() {
+
+                        if file_found == file {
+                            return Some(path.to_str()?.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return None;
 }
 
