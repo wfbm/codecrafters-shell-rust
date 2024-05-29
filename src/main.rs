@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::{process,env,fs};
+use std::process::{Command,Output};
 use std::path::PathBuf;
 
 fn main() {
@@ -34,12 +35,12 @@ enum Builtin {
     Invalid { attempt: String },
 }
 
-trait Command {
+trait ShellCommand {
     fn handle(&self) -> &str;
     fn execute(&self);
 }
 
-impl Command for Builtin {
+impl ShellCommand for Builtin {
     fn handle(&self) -> &str {
         match self {
             Builtin::Echo { .. } => "echo",
@@ -73,8 +74,17 @@ impl Command for Builtin {
                 } else {
                     println!("type: missing operand");
                 }
-            },  
-            Builtin::Invalid{ attempt } => println!("{attempt}: command not found"),
+            },
+            Builtin::Invalid{ attempt } => {
+
+                let output = execute(&attempt);
+
+                if output.status.success() {
+                    io::stdout().write_all(&output.stdout).unwrap();
+                } else {
+                    println!("{attempt}: command not found");
+                }
+            }
         }
     }
 }
@@ -117,20 +127,15 @@ fn find_exe(name: &str) -> Option<String> {
 
 fn find_file_in_path(file: &str, dir: PathBuf) -> Option<String> {
 
-    let mut dirs_to_search = vec![dir];
-    while let Some(current_dir) = dirs_to_search.pop() {
+    if dir.is_dir() {
 
-        if current_dir.is_dir() {
-
-            for entry in fs::read_dir(current_dir).ok()? {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if !path.is_dir() {
-                    if let Some(file_found) = path.file_name()?.to_str() {
-
-                        if file_found == file {
-                            return Some(path.to_str()?.to_string());
-                        }
+        for entry in fs::read_dir(dir).ok()? {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if !path.is_dir() {
+                if let Some(file_found) = path.file_name()?.to_str() {
+                    if file_found == file {
+                        return Some(path.to_str()?.to_string());
                     }
                 }
             }
@@ -138,5 +143,13 @@ fn find_file_in_path(file: &str, dir: PathBuf) -> Option<String> {
     }
 
     return None;
+}
+
+fn execute(cmd: &str) -> Output {
+    return Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+        .expect("failed to run {cmd}");
 }
 
