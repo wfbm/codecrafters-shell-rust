@@ -1,10 +1,17 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::{env, fs, process};
 
 fn main() {
+    let mut ctx = ShellContext {
+        current_dir: env::current_dir()
+            .expect("should have a valid dir")
+            .display()
+            .to_string(),
+    };
+
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -18,7 +25,7 @@ fn main() {
 
         let parsed: Vec<&str> = input.trim().split_whitespace().collect();
         if let Some(command) = parse_command(parsed) {
-            command.execute();
+            command.execute(&mut ctx);
         } else {
             println!("Invalid command {}", input.trim());
         }
@@ -29,13 +36,18 @@ enum Builtin {
     Echo { content: Option<String> },
     Exit { code: Option<i32> },
     Type { command: Option<String> },
+    Cd { path: Option<String> },
     Pwd,
     Invalid { attempt: String },
 }
 
+struct ShellContext {
+    current_dir: String,
+}
+
 trait ShellCommand {
     fn handle(&self) -> &str;
-    fn execute(&self);
+    fn execute(&self, ctx: &mut ShellContext);
 }
 
 impl ShellCommand for Builtin {
@@ -45,11 +57,12 @@ impl ShellCommand for Builtin {
             Builtin::Exit { .. } => "exit",
             Builtin::Type { .. } => "type",
             Builtin::Pwd => "pwd",
+            Builtin::Cd { .. } => "cd",
             Builtin::Invalid { attempt } => attempt,
         }
     }
 
-    fn execute(&self) {
+    fn execute(&self, ctx: &mut ShellContext) {
         match self {
             Builtin::Echo { content } => println!("{}", content.as_deref().unwrap_or("")),
             Builtin::Exit { code } => process::exit(code.unwrap_or(0)),
@@ -74,13 +87,27 @@ impl ShellCommand for Builtin {
                     println!("type: missing operand");
                 }
             }
+            Builtin::Cd { path } => {
+                if let Some(choosen_path) = path {
+                    let choosen_path = choosen_path.replace(
+                        "~",
+                        &home::home_dir()
+                            .expect("should have a home dir")
+                            .display()
+                            .to_string(),
+                    );
+
+                    if Path::new(&choosen_path).exists() {
+                        ctx.current_dir = choosen_path.to_string();
+                    } else {
+                        println!("cd: {}: No such file or directory", choosen_path);
+                    }
+                } else {
+                    println!("you must inform a path");
+                }
+            }
             Builtin::Pwd => {
-                println!(
-                    "{}",
-                    env::current_dir()
-                        .expect("should have a valid dir")
-                        .display()
-                );
+                println!("{}", ctx.current_dir);
             }
             Builtin::Invalid { attempt } => {
                 let output = execute(&attempt);
@@ -113,6 +140,9 @@ fn parse_command(command: Vec<&str>) -> Option<Builtin> {
             } else {
                 Some(command.join(" "))
             },
+        }),
+        ["cd", path] => Some(Builtin::Cd {
+            path: Some(path.to_string()),
         }),
         ["pwd"] => Some(Builtin::Pwd),
         [] => None,
