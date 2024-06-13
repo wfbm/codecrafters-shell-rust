@@ -1,17 +1,14 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
-use std::{process,env,fs};
-use std::process::{Command,Output};
 use std::path::PathBuf;
+use std::process::{Command, Output};
+use std::{env, fs, process};
 
 fn main() {
-
-   loop {
-
+    loop {
         print!("$ ");
         io::stdout().flush().unwrap();
 
-        // Wait for user input
         let stdin = io::stdin();
         let mut input = String::new();
         if stdin.read_line(&mut input).is_err() {
@@ -25,13 +22,14 @@ fn main() {
         } else {
             println!("Invalid command {}", input.trim());
         }
-   } 
+    }
 }
 
 enum Builtin {
     Echo { content: Option<String> },
     Exit { code: Option<i32> },
     Type { command: Option<String> },
+    Pwd,
     Invalid { attempt: String },
 }
 
@@ -46,15 +44,16 @@ impl ShellCommand for Builtin {
             Builtin::Echo { .. } => "echo",
             Builtin::Exit { .. } => "exit",
             Builtin::Type { .. } => "type",
+            Builtin::Pwd => "pwd",
             Builtin::Invalid { attempt } => attempt,
         }
     }
 
     fn execute(&self) {
         match self {
-            Builtin::Echo{ content } => println!("{}", content.as_deref().unwrap_or("")),
-            Builtin::Exit{ code } => process::exit(code.unwrap_or(0)),
-            Builtin::Type{ command } => {
+            Builtin::Echo { content } => println!("{}", content.as_deref().unwrap_or("")),
+            Builtin::Exit { code } => process::exit(code.unwrap_or(0)),
+            Builtin::Type { command } => {
                 if let Some(cmd_str) = command {
                     let parsed = cmd_str.split_whitespace().collect();
                     if let Some(cmd) = parse_command(parsed) {
@@ -63,7 +62,7 @@ impl ShellCommand for Builtin {
                                 if let Some(exe) = find_exe(&attempt) {
                                     println!("{attempt} is {exe}");
                                 } else {
-                                    println!("{attempt} not found");
+                                    println!("{attempt}: not found");
                                 }
                             }
                             _ => println!("{} is a shell builtin", cmd.handle()),
@@ -74,9 +73,16 @@ impl ShellCommand for Builtin {
                 } else {
                     println!("type: missing operand");
                 }
-            },
-            Builtin::Invalid{ attempt } => {
-
+            }
+            Builtin::Pwd => {
+                println!(
+                    "{}",
+                    env::current_dir()
+                        .expect("should have a valid dir")
+                        .display()
+                );
+            }
+            Builtin::Invalid { attempt } => {
                 let output = execute(&attempt);
 
                 if output.status.success() {
@@ -90,34 +96,39 @@ impl ShellCommand for Builtin {
 }
 
 fn parse_command(command: Vec<&str>) -> Option<Builtin> {
-
     match command.as_slice() {
-        ["echo", args @ ..] => Some(Builtin::Echo{ 
-            content: if args.is_empty() { None } else { Some(args.join(" ")) },
+        ["echo", args @ ..] => Some(Builtin::Echo {
+            content: if args.is_empty() {
+                None
+            } else {
+                Some(args.join(" "))
+            },
         }),
-        ["exit", code @ ..] => Some(Builtin::Exit{ 
+        ["exit", code @ ..] => Some(Builtin::Exit {
             code: code.first().and_then(|c| c.parse::<i32>().ok()),
         }),
-        ["type", command @ ..] => Some(Builtin::Type{ 
-            command: if command.is_empty() { None } else { Some(command.join(" ")) },
+        ["type", command @ ..] => Some(Builtin::Type {
+            command: if command.is_empty() {
+                None
+            } else {
+                Some(command.join(" "))
+            },
         }),
+        ["pwd"] => Some(Builtin::Pwd),
         [] => None,
-        _ => Some(Builtin::Invalid { 
+        _ => Some(Builtin::Invalid {
             attempt: command.join(" "),
         }),
     }
 }
 
 fn find_exe(name: &str) -> Option<String> {
-
     if let Some(paths) = env::var_os("PATH") {
-
         for path in env::split_paths(&paths) {
             if let Some(file) = find_file_in_path(name, path) {
                 return Some(file);
             }
         }
-
     } else {
         println!("PATH not accessible");
     }
@@ -126,9 +137,7 @@ fn find_exe(name: &str) -> Option<String> {
 }
 
 fn find_file_in_path(file: &str, dir: PathBuf) -> Option<String> {
-
     if dir.is_dir() {
-
         for entry in fs::read_dir(dir).ok()? {
             let entry = entry.ok()?;
             let path = entry.path();
@@ -152,4 +161,3 @@ fn execute(cmd: &str) -> Output {
         .output()
         .expect("failed to run {cmd}");
 }
-
